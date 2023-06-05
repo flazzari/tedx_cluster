@@ -1,44 +1,14 @@
-###### TEDx-Load-Aggregate-Model
-######
-
-import sys
-import json
-import pyspark
-from pyspark.sql.functions import col, collect_list, array_join, collect_set
-
-from awsglue.transforms import *
-from awsglue.utils import getResolvedOptions
-from pyspark.context import SparkContext
-from awsglue.context import GlueContext
-from awsglue.job import Job
-
-
-##### FROM FILES
-tedx_dataset_path = "s3://unibg-2023-dati-tedx-fl/tedx_dataset.csv"
-
-###### READ PARAMETERS
-args = getResolvedOptions(sys.argv, ['JOB_NAME'])
-
-##### START JOB CONTEXT AND JOB
-sc = SparkContext()
-
-glueContext = GlueContext(sc)
-spark = glueContext.spark_session
-    
-job = Job(glueContext)
-job.init(args['JOB_NAME'], args)
-
-
-## TAGS DATASET
-tags_dataset_path = "s3://unibg-2023-dati-tedx-fl/tags_dataset.csv"
-
-# NLP function for pre process tags
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import string
+import pandas as pd
+import gensim
+from gensim.corpora import Dictionary
+from sklearn.cluster import KMeans
 
 def preprocess_tags(tags):
+    ''' Tag preprocessing for input of kMeans '''
     # Tokenize the tags
     tokens = [nltk.word_tokenize(tag.lower()) for tag in tags]
 
@@ -53,15 +23,11 @@ def preprocess_tags(tags):
 
     return lemmatized_tokens
 
-### Category clustering 
-import pandas as pd
-import gensim
-from gensim.corpora import Dictionary
-from sklearn.cluster import KMeans
-
+# dataset path
+TAGS_DATASET = "tedx_dataset.csv"
 
 # Load the TEDx tags into a dataframe
-tedx_tags_df = pd.read_csv(tags_dataset_path)
+tedx_tags_df = pd.read_csv(TAGS_DATASET)
 
 # Preprocess the tags using NLP techniques
 tag_corpus = preprocess_tags(tedx_tags_df["tag"])
@@ -70,8 +36,8 @@ tag_corpus = preprocess_tags(tedx_tags_df["tag"])
 dictionary = Dictionary(tag_corpus)
 
 # Perform topic modeling on the tag corpus
-num_topics = 10
-lda_model = gensim.models.LdaModel(tag_corpus, num_topics=num_topics, id2word=dictionary, passes=10)
+NUM_TOPICS = 10
+lda_model = gensim.models.LdaModel(tag_corpus, num_topics=NUM_TOPICS, id2word=dictionary, passes=10)
 
 # Get the topic distribution for each tag
 tag_topics = lda_model.get_document_topics(tag_corpus)
@@ -94,19 +60,3 @@ cluster_to_category = {
 tedx_tags_df["category"] = [cluster_to_category[cluster] for cluster in tag_clusters]
 
 final_df = tedx_tags_df.columns("tag", "category")
-
-# Write data in Mongo collection
-mongo_uri = "mongodb+srv://flazzari2:ZYRMTEd7ByIPQGaw@expresscluster.ohodxd3.mongodb.net"
-print(mongo_uri)
-
-write_mongo_options = {
-    "uri": mongo_uri,
-    "database": "unibg_tedx_2023",
-    "collection": "tags_to_macro_category",
-    "ssl": "true",
-    "ssl.domain_match": "false"}
-
-from awsglue.dynamicframe import DynamicFrame
-tedx_dataset_dynamic_frame = DynamicFrame.fromDF(final_df, glueContext, "nested")
-
-glueContext.write_dynamic_frame.from_options(tedx_dataset_dynamic_frame, connection_type="mongodb", connection_options=write_mongo_options)
