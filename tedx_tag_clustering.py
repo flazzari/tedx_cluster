@@ -1,8 +1,11 @@
+"""NLP Module"""
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import string
+"""Modules for ML and .csv handling"""
 import pandas as pd
+"""test"""
 import gensim
 from gensim.corpora import Dictionary
 from sklearn.cluster import KMeans
